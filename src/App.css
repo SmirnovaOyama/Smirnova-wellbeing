@@ -211,9 +211,17 @@
   transition: filter 150ms ease;
 }
 
-.bar:hover,
 .bar:focus-visible {
   filter: brightness(1.2);
+}
+
+/* Scoped to real hover so a touch swipe across the bars can't leave WebKit's
+   synthetic :hover stuck on several bars at once, each one clipped to white
+   since --border is light enough that brightness(1.2) blows it out. */
+@media (hover: hover) {
+  .bar:hover {
+    filter: brightness(1.2);
+  }
 }
 
 .bar-seg {
