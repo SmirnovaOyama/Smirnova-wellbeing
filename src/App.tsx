@@ -21,11 +21,14 @@ import {
   createEntry,
   updateEntry,
   deleteEntry,
+  uploadImage,
   logout,
+  setUnauthorizedHandler,
   ApiError,
   type ApiEntry,
 } from './api'
 import { LoginScreen } from './LoginScreen'
+import { Markdown } from './Markdown'
 import './App.css'
 
 // Stands in while GET /api/config is in flight, and if it ever fails. Kept in
@@ -260,7 +263,11 @@ function BarTooltip({ tooltip }: { tooltip: TooltipState }) {
                   {entry.tier && <TierChip tier={entry.tier} />}
                   {entry.tier && prevTier && <DiffBadge metric={tooltip.metric} from={prevTier} to={entry.tier} />}
                 </span>
-                {entry.note && <span className="tooltip-entry-note">{entry.note}</span>}
+                {entry.note && (
+                  <span className="tooltip-entry-note">
+                    <Markdown text={entry.note} />
+                  </span>
+                )}
               </li>
             ))}
           </ul>
@@ -383,6 +390,114 @@ function TimeField({ value, onChange }: { value: string; onChange: (time: string
   )
 }
 
+/** Pulls an image out of a paste or a drop. Chrome exposes it through `items`,
+ *  iOS Safari through `files` — checking both is what makes pasting from a
+ *  phone work as well as ⌘V on a desktop. */
+function imageFromTransfer(data: DataTransfer | null): File | null {
+  if (!data) return null
+  for (const file of Array.from(data.files)) {
+    if (file.type.startsWith('image/')) return file
+  }
+  for (const item of Array.from(data.items)) {
+    if (item.kind === 'file' && item.type.startsWith('image/')) {
+      const file = item.getAsFile()
+      if (file) return file
+    }
+  }
+  return null
+}
+
+/** The note box. An image dropped in here is uploaded to R2 and written back
+ *  into the text as `![](/api/uploads/…)`, which is what the log then renders. */
+function NoteField({
+  value,
+  onChange,
+  placeholder,
+  rows,
+  onUploadingChange,
+}: {
+  value: string
+  onChange: (value: string) => void
+  placeholder: string
+  rows: number
+  onUploadingChange: (uploading: boolean) => void
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
+  const [uploading, setUploading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function attach(file: File) {
+    setUploading(true)
+    onUploadingChange(true)
+    setError(null)
+    try {
+      const { url } = await uploadImage(file)
+      const el = ref.current
+      // Read the live textarea rather than the captured prop: the upload takes
+      // long enough that anything typed meanwhile would otherwise be dropped.
+      const current = el?.value ?? value
+      const start = el?.selectionStart ?? current.length
+      const end = el?.selectionEnd ?? current.length
+      const snippet = `![](${url})`
+      onChange(`${current.slice(0, start)}${snippet}${current.slice(end)}`)
+      requestAnimationFrame(() => {
+        const caret = start + snippet.length
+        el?.focus()
+        el?.setSelectionRange(caret, caret)
+      })
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not upload the image.')
+    } finally {
+      setUploading(false)
+      onUploadingChange(false)
+    }
+  }
+
+  function handleTransfer(data: DataTransfer | null, preventDefault: () => void) {
+    const file = imageFromTransfer(data)
+    if (!file) return
+    preventDefault()
+    attach(file)
+  }
+
+  return (
+    <div className="note-field">
+      <textarea
+        ref={ref}
+        className="checkin-note"
+        placeholder={placeholder}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onPaste={(e) => handleTransfer(e.clipboardData, () => e.preventDefault())}
+        onDrop={(e) => handleTransfer(e.dataTransfer, () => e.preventDefault())}
+        rows={rows}
+      />
+      <div className="note-field-foot">
+        {/* Pasting covers the desktop; the picker is what a phone can actually
+            reach, and on iOS it offers the camera and the photo library too. */}
+        <button type="button" className="note-attach" onClick={() => fileRef.current?.click()} disabled={uploading}>
+          {uploading ? 'Uploading…' : 'Add image'}
+        </button>
+        <span className="note-hint">or paste one</span>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          className="note-file"
+          onChange={(e) => {
+            const file = e.target.files?.[0]
+            // Cleared so picking the same file twice still fires a change.
+            e.target.value = ''
+            if (file) attach(file)
+          }}
+        />
+      </div>
+      {error && <p className="checkin-error">{error}</p>}
+    </div>
+  )
+}
+
 type EntryMode = 'tier' | 'note'
 
 /** Whether a check-in records a grade or is text only. */
@@ -423,6 +538,7 @@ function CheckInForm({
   const [time, setTime] = useState(nowTimeKey)
   const [note, setNote] = useState('')
   const [saving, setSaving] = useState(false)
+  const [uploadingImage, setUploadingImage] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   function open() {
@@ -474,12 +590,12 @@ function CheckInForm({
         </>
       )}
       <TimeField value={time} onChange={setTime} />
-      <textarea
-        className="checkin-note"
-        placeholder={mode === 'tier' ? 'Add a note (optional)' : 'Write something'}
+      <NoteField
         value={note}
-        onChange={(e) => setNote(e.target.value)}
+        onChange={setNote}
+        placeholder={mode === 'tier' ? 'Add a note (optional)' : 'Write something'}
         rows={mode === 'tier' ? 2 : 3}
+        onUploadingChange={setUploadingImage}
       />
       {error && <p className="checkin-error">{error}</p>}
       <div className="checkin-actions">
@@ -490,7 +606,7 @@ function CheckInForm({
           type="button"
           className="button-primary"
           onClick={handleSave}
-          disabled={saving || (mode === 'note' && !note.trim())}
+          disabled={saving || uploadingImage || (mode === 'note' && !note.trim())}
         >
           {saving ? 'Saving…' : 'Save'}
         </button>
@@ -615,6 +731,7 @@ function LogEntryRow({
   const [time, setTime] = useState(entry.time)
   const [note, setNote] = useState(entry.note ?? '')
   const [saving, setSaving] = useState(false)
+  const [uploadingImage, setUploadingImage] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -676,19 +793,23 @@ function LogEntryRow({
         )}
       </div>
 
-      {!editing && entry.note && <p className="log-entry-note">{entry.note}</p>}
+      {!editing && entry.note && (
+        <p className="log-entry-note">
+          <Markdown text={entry.note} />
+        </p>
+      )}
 
       {editing && (
         <div className="log-entry-form" onClick={(e) => e.stopPropagation()}>
           <ModeToggle mode={mode} onChange={setMode} />
           {mode === 'tier' && <TierPicker metric={metric} value={tier} onChange={setTier} />}
           <TimeField value={time} onChange={setTime} />
-          <textarea
-            className="checkin-note"
-            placeholder={mode === 'tier' ? 'Add a note (optional)' : 'Write something'}
+          <NoteField
             value={note}
-            onChange={(e) => setNote(e.target.value)}
+            onChange={setNote}
+            placeholder={mode === 'tier' ? 'Add a note (optional)' : 'Write something'}
             rows={mode === 'tier' ? 2 : 3}
+            onUploadingChange={setUploadingImage}
           />
           {error && <p className="checkin-error">{error}</p>}
           <div className="log-entry-actions">
@@ -720,7 +841,7 @@ function LogEntryRow({
                 type="button"
                 className="button-primary"
                 onClick={handleSave}
-                disabled={saving || (mode === 'note' && !note.trim())}
+                disabled={saving || uploadingImage || (mode === 'note' && !note.trim())}
               >
                 {saving ? 'Saving…' : 'Save'}
               </button>
@@ -971,6 +1092,18 @@ export function AdminApp() {
       .catch((err) => setEntriesError(err instanceof ApiError ? err.message : 'Could not load the log'))
   }, [])
 
+  // Any request coming back 401 — a check-in, an image upload, a rename — means
+  // the session lapsed, so hand the login screen back rather than leaving a
+  // dashboard where every button fails.
+  useEffect(() => {
+    setUnauthorizedHandler(() => {
+      setAuthState('signed-out')
+      setEntries([])
+      setEntriesError(null)
+    })
+    return () => setUnauthorizedHandler(null)
+  }, [])
+
   useEffect(() => {
     getSession()
       .then((res) => setAuthState(res.authenticated ? 'signed-in' : 'signed-out'))
@@ -981,7 +1114,24 @@ export function AdminApp() {
     if (authState === 'signed-in') loadEntries()
   }, [authState, loadEntries])
 
-  useRefreshOnReturn(authState === 'signed-in', loadEntries)
+  // Coming back to a long-open tab re-checks the session as well as the data:
+  // the cookie may well have expired while the tab sat in the background, and
+  // finding that out on return beats finding it out on the next save.
+  const refreshSession = useCallback(() => {
+    getSession()
+      .then((res) => {
+        if (!res.authenticated) {
+          setAuthState('signed-out')
+          setEntries([])
+          return
+        }
+        setAuthState('signed-in')
+        loadEntries()
+      })
+      .catch(() => {})
+  }, [loadEntries])
+
+  useRefreshOnReturn(authState === 'signed-in', refreshSession)
 
   async function handleCreateEntry(metricId: string, tier: Tier | null, time: string, note: string) {
     const { entry } = await createEntry({ metricId, date: todayKey(), time, tier, note: note.trim() || null })

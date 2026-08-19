@@ -6,3 +6,9 @@ compatibility_date = "2024-09-23"
 binding = "DB"
 database_name = "wellbeing"
 database_id = "49390fb6-1549-4e86-90bc-ef494b0fabc4"
+
+# Images pasted into a note. Served back through functions/api/uploads/[[key]].ts
+# rather than a public bucket URL, so everything stays on one origin.
+[[r2_buckets]]
+binding = "IMAGES"
+bucket_name = "wellbeing-images"

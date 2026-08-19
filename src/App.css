@@ -908,6 +908,81 @@
   margin: 0;
 }
 
+/* ── Note field ────────────────────────────────────────────────────────── */
+
+.note-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.note-field-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.note-attach {
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 0.8125rem;
+  color: var(--accent);
+  cursor: pointer;
+  padding: 0;
+  transition: opacity 150ms ease;
+}
+
+.note-attach:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.note-attach:disabled {
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.note-hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+/* Opened by the button next to it — a bare file input cannot be styled to
+   match, and on a phone the button is the larger target. */
+.note-file {
+  display: none;
+}
+
+/* ── Rendered notes ────────────────────────────────────────────────────── */
+
+.note-image {
+  display: block;
+  max-width: 100%;
+  max-height: 320px;
+  width: auto;
+  height: auto;
+  margin: 6px 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+/* The tooltip is only 250px wide, so a full-size image would swamp it. */
+.tooltip-entry-note .note-image {
+  max-height: 120px;
+}
+
+.note-link {
+  color: var(--accent);
+}
+
+.note-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9em;
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+
 .checkin-actions {
   display: flex;
   justify-content: flex-end;

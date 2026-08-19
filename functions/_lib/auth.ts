@@ -4,6 +4,8 @@ export interface Env {
   SESSION_SECRET: string
   /** Name shown in the page title. Optional — see functions/api/config.ts. */
   SITE_OWNER?: string
+  /** Images pasted into notes. See functions/api/uploads/. */
+  IMAGES: R2Bucket
 }
 
 const PBKDF2_ITERATIONS = 100_000

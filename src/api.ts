@@ -14,7 +14,31 @@ export interface ApiEntry {
   updated_at: string
 }
 
-class ApiError extends Error {}
+class ApiError extends Error {
+  /** HTTP status, or 0 for a failure raised before the request went out. */
+  readonly status: number
+
+  constructor(message: string, status: number) {
+    super(message)
+    this.status = status
+  }
+}
+
+// The session cookie lasts 30 days and can lapse mid-visit — or be signed out
+// from another tab. Every response passes through here, so this is the one
+// place that can notice and let the app drop back to the login screen instead
+// of leaving a dashboard where every action fails.
+let onUnauthorized: (() => void) | null = null
+
+export function setUnauthorizedHandler(handler: (() => void) | null) {
+  onUnauthorized = handler
+}
+
+async function failure(res: Response, fallback: string): Promise<ApiError> {
+  if (res.status === 401) onUnauthorized?.()
+  const body = await res.json().catch(() => null)
+  return new ApiError((body && body.error) || fallback, res.status)
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -23,8 +47,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers: { 'Content-Type': 'application/json', ...init?.headers },
   })
   if (!res.ok) {
-    const body = await res.json().catch(() => null)
-    throw new ApiError((body && body.error) || `Request failed with status ${res.status}`)
+    throw await failure(res, `Request failed with status ${res.status}`)
   }
   return res.json()
 }
@@ -74,6 +97,30 @@ export function updateEntry(
 
 export function deleteEntry(id: number): Promise<{ ok: true }> {
   return request(`/api/entries/${id}`, { method: 'DELETE' })
+}
+
+/** Kept in step with MAX_BYTES in functions/api/uploads/index.ts, so an
+ *  oversized file is refused before it is uploaded rather than after. */
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024
+
+// Not routed through `request` above: the body is the raw File, sent with its
+// own content type, so the JSON header that helper sets would be wrong.
+export async function uploadImage(file: File): Promise<{ url: string }> {
+  if (file.size > MAX_IMAGE_BYTES) {
+    throw new ApiError('Images have to be 5 MB or smaller', 0)
+  }
+
+  const res = await fetch('/api/uploads', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': file.type },
+    body: file,
+  })
+
+  if (!res.ok) {
+    throw await failure(res, `Upload failed with status ${res.status}`)
+  }
+  return res.json()
 }
 
 export { ApiError }
