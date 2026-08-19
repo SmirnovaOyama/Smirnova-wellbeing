@@ -1,26 +1,38 @@
 :root {
-  --bg: #f3f2ed;
-  --surface: #fbfaf6;
-  --text: #201f1b;
-  --text-muted: #6b6a62;
-  --border: #e3e0d5;
+  --bg: #ffffff;
+  --surface: #ffffff;
+  --text: #1a1a1a;
+  --text-muted: #6b6b6b;
+  --border: #e5e5e5;
   --accent: #2f6e5c;
   --danger: #b4463c;
 
-  /* Grade scale, A (best) → F (worst, 自杀意念 only). Each pair is the solid
-     fill and the text colour that sits on top of it. */
+  /* The log timeline is drawn as a vine. Both shapes are carried as masks
+     rather than background images so their colour stays a token here; the stem
+     tiles vertically, which is why its path leaves y=44 on exactly the heading
+     it entered y=0 on — otherwise every repeat would show a kink. */
+  --vine: #c6dad0;
+  --vine-leaf: #96c0aa;
+  --vine-node: #6fa992;
+  --vine-stem-img: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='26' height='44' viewBox='0 0 26 44'><path d='M13 0C17.5 7.3 17.5 14.7 13 22C8.5 29.3 8.5 36.7 13 44' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round'/></svg>");
+  --vine-leaf-img: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='13' viewBox='0 0 20 13'><path d='M1 10.5C4 3.5 10 1.5 19 2.5C18 9.5 11 12.5 1 10.5Z' fill='black'/></svg>");
+
+  /* Grade scale, A (best) → F (worst, suicidal ideation only). Each pair is the
+     solid fill and the text colour on top of it. The fills stay this deep
+     on purpose: the white ink over them clears WCAG AA only at this darkness,
+     so lightening a fill means re-checking its ink. */
   --tier-a: #3f7a55;
-  --tier-a-ink: #fbfaf6;
+  --tier-a-ink: #ffffff;
   --tier-b: #5f7c33;
-  --tier-b-ink: #fbfaf6;
+  --tier-b-ink: #ffffff;
   --tier-c: #9a6c14;
-  --tier-c-ink: #fbfaf6;
+  --tier-c-ink: #ffffff;
   --tier-d: #b2601f;
-  --tier-d-ink: #fbfaf6;
+  --tier-d-ink: #ffffff;
   --tier-e: #a63b32;
-  --tier-e-ink: #fbfaf6;
-  --tier-f: #14120e;
-  --tier-f-ink: #f1eee6;
+  --tier-e-ink: #ffffff;
+  --tier-f: #161616;
+  --tier-f-ink: #ffffff;
 
   /* index.html sets viewport-fit=cover, so the viewport extends under the notch
      and the home indicator. Mirrored into custom properties so JS can read them
@@ -32,34 +44,10 @@
     -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Helvetica Neue', 'Microsoft YaHei', 'SF Pro Text', system-ui,
     sans-serif;
 
-  color-scheme: light dark;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #1b1a16;
-    --surface: #222019;
-    --text: #f1eee6;
-    --text-muted: #a7a398;
-    --border: #38352c;
-    --accent: #5cb694;
-    --danger: #d06860;
-
-    --tier-a: #5fa377;
-    --tier-a-ink: #12110e;
-    --tier-b: #9bb457;
-    --tier-b-ink: #12110e;
-    --tier-c: #d9ae55;
-    --tier-c-ink: #12110e;
-    --tier-d: #d98f5b;
-    --tier-d-ink: #12110e;
-    --tier-e: #d06860;
-    --tier-e-ink: #12110e;
-    /* True black barely separates from the dark background, so anything
-       filled with it also gets a hairline outline (see App.css). */
-    --tier-f: #000000;
-    --tier-f-ink: #d7d3ca;
-  }
+  /* Light only. The palette above is the entire theme — declaring `light`
+     (not `light dark`) also keeps the native form controls, the time picker
+     and the scrollbars light for anyone whose OS is set to dark. */
+  color-scheme: light;
 }
 
 * {

@@ -5,19 +5,19 @@ export const ALL_TIERS: Tier[] = ['A', 'B', 'C', 'D', 'E', 'F']
 export interface MetricConfig {
   id: string
   title: string
-  /** Grades this metric accepts, best first. 心情 stops at E; 自杀意念 adds F. */
+  /** Grades this metric accepts, best first. Mood stops at E; ideation adds F. */
   tiers: Tier[]
 }
 
 export const metrics: MetricConfig[] = [
   {
     id: 'mood',
-    title: '心情',
+    title: 'Mood',
     tiers: ['A', 'B', 'C', 'D', 'E'],
   },
   {
     id: 'suicidal-ideation',
-    title: '自杀意念',
+    title: 'Suicidal ideation',
     tiers: ['A', 'B', 'C', 'D', 'E', 'F'],
   },
 ]
@@ -67,7 +67,7 @@ export function tierDelta(metric: MetricConfig, from: Tier, to: Tier): number {
 }
 
 // 1 for the best grade down to 0 for the worst, spread evenly over the metric's
-// own depth so 心情 (A–E) and 自杀意念 (A–F) stay comparable to each other.
+// own depth so mood (A–E) and suicidal ideation (A–F) stay comparable.
 export function tierScore(metric: MetricConfig, tier: Tier): number {
   const index = metric.tiers.indexOf(tier)
   if (index === -1) return 0

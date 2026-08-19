@@ -7,7 +7,8 @@ export interface ApiEntry {
   date: string
   /** HH:MM, local. Several entries can share a date. */
   time: string
-  tier: Tier
+  /** null on a text-only entry, which carries a note instead of a grade. */
+  tier: Tier | null
   note: string | null
   created_at: string
   updated_at: string
@@ -32,6 +33,15 @@ export function getSession(): Promise<{ authenticated: boolean }> {
   return request('/api/session')
 }
 
+/** Display config, stored server-side so the owner name survives a redeploy. */
+export function getConfig(): Promise<{ owner: string }> {
+  return request('/api/config')
+}
+
+export function setConfig(owner: string): Promise<{ owner: string }> {
+  return request('/api/config', { method: 'PUT', body: JSON.stringify({ owner }) })
+}
+
 export function login(password: string): Promise<{ ok: true }> {
   return request('/api/login', { method: 'POST', body: JSON.stringify({ password }) })
 }
@@ -48,7 +58,8 @@ export function createEntry(input: {
   metricId: string
   date: string
   time: string
-  tier: Tier
+  /** null records text only — the note is then required. */
+  tier: Tier | null
   note?: string | null
 }): Promise<{ entry: ApiEntry }> {
   return request('/api/entries', { method: 'POST', body: JSON.stringify(input) })
@@ -56,7 +67,7 @@ export function createEntry(input: {
 
 export function updateEntry(
   id: number,
-  input: { tier?: Tier; time?: string; note?: string | null },
+  input: { tier?: Tier | null; time?: string; note?: string | null },
 ): Promise<{ entry: ApiEntry }> {
   return request(`/api/entries/${id}`, { method: 'PATCH', body: JSON.stringify(input) })
 }

@@ -2,8 +2,8 @@ export type Tier = 'A' | 'B' | 'C' | 'D' | 'E' | 'F'
 
 export const VALID_TIERS: ReadonlySet<string> = new Set(['A', 'B', 'C', 'D', 'E', 'F'])
 
-// Grades each metric accepts. Kept in step with src/data/metrics.ts — 心情 tops
-// out at E, only 自杀意念 can reach F.
+// Grades each metric accepts. Kept in step with src/data/metrics.ts — mood tops
+// out at E, only suicidal ideation can reach F.
 export const METRIC_TIERS: Record<string, ReadonlySet<string>> = {
   mood: new Set(['A', 'B', 'C', 'D', 'E']),
   'suicidal-ideation': new Set(['A', 'B', 'C', 'D', 'E', 'F']),
@@ -17,7 +17,8 @@ export interface EntryRow {
   metric_id: string
   date: string
   time: string
-  tier: Tier
+  /** null on a text-only entry, which carries a note instead of a grade. */
+  tier: Tier | null
   note: string | null
   created_at: string
   updated_at: string

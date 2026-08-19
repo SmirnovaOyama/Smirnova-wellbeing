@@ -2,7 +2,8 @@ import { isAuthenticated, jsonResponse, unauthorized, type Env } from '../../_li
 import { METRIC_TIERS, TIME_PATTERN, VALID_TIERS, type EntryRow } from '../../_lib/types'
 
 interface UpdateBody {
-  tier?: string
+  /** Explicit null strips the grade, turning the row into a text-only entry. */
+  tier?: string | null
   time?: string
   note?: string | null
 }
@@ -12,34 +13,41 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
 
   const id = Number(params.id)
   if (!Number.isInteger(id)) {
-    return jsonResponse({ error: '无效的 id' }, { status: 400 })
+    return jsonResponse({ error: 'Invalid id' }, { status: 400 })
   }
 
   let body: UpdateBody
   try {
     body = await request.json()
   } catch {
-    return jsonResponse({ error: '请求格式有误' }, { status: 400 })
+    return jsonResponse({ error: 'Malformed request' }, { status: 400 })
   }
 
   const existing = await env.DB.prepare('SELECT * FROM entries WHERE id = ?').bind(id).first<EntryRow>()
   if (!existing) {
-    return jsonResponse({ error: '未找到该记录' }, { status: 404 })
+    return jsonResponse({ error: 'Entry not found' }, { status: 404 })
   }
 
   // Which grades are legal depends on the metric this row belongs to.
   const allowedTiers = METRIC_TIERS[existing.metric_id] ?? VALID_TIERS
-  if (body.tier !== undefined && !allowedTiers.has(body.tier)) {
-    return jsonResponse({ error: '无效的等级' }, { status: 400 })
+  if (body.tier !== undefined && body.tier !== null && !allowedTiers.has(body.tier)) {
+    return jsonResponse({ error: 'Invalid grade' }, { status: 400 })
   }
   if (body.time !== undefined && !TIME_PATTERN.test(body.time)) {
-    return jsonResponse({ error: '时间格式有误(应为 HH:MM)' }, { status: 400 })
+    return jsonResponse({ error: 'Invalid time (expected HH:MM)' }, { status: 400 })
   }
 
   const now = new Date().toISOString()
-  const tier = body.tier ?? existing.tier
+  // `?? existing` would swallow an explicit null, which is exactly how the
+  // grade gets stripped — so absence and null have to be told apart here.
+  const tier = body.tier !== undefined ? body.tier : existing.tier
   const time = body.time ?? existing.time
-  const note = body.note !== undefined ? body.note : existing.note
+  const rawNote = body.note !== undefined ? body.note : existing.note
+  const note = rawNote?.trim() || null
+
+  if (tier === null && note === null) {
+    return jsonResponse({ error: 'An entry without a grade needs some text' }, { status: 400 })
+  }
 
   await env.DB.prepare('UPDATE entries SET tier = ?, time = ?, note = ?, updated_at = ? WHERE id = ?')
     .bind(tier, time, note, now, id)
@@ -54,12 +62,12 @@ export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params
 
   const id = Number(params.id)
   if (!Number.isInteger(id)) {
-    return jsonResponse({ error: '无效的 id' }, { status: 400 })
+    return jsonResponse({ error: 'Invalid id' }, { status: 400 })
   }
 
   const existing = await env.DB.prepare('SELECT id FROM entries WHERE id = ?').bind(id).first()
   if (!existing) {
-    return jsonResponse({ error: '未找到该记录' }, { status: 404 })
+    return jsonResponse({ error: 'Entry not found' }, { status: 404 })
   }
 
   await env.DB.prepare('DELETE FROM entries WHERE id = ?').bind(id).run()

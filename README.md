@@ -28,6 +28,8 @@ npm run hash-password -- <your-password>
 
 Copy `.dev.vars.example` to `.dev.vars` and fill in the hash plus a random `SESSION_SECRET`. `.dev.vars` is gitignored — never commit it.
 
+`SITE_OWNER` is optional. The name in the page title (`<name>'s Wellbeing`) is normally edited from the dashboard — sign in and use **Rename** in the header — and is stored in the `settings` table, so it survives a redeploy. `SITE_OWNER` only seeds a database that has no name saved yet; without either, the name falls back to `Smirnova`.
+
 Apply the D1 schema locally:
 
 ```bash
@@ -56,6 +58,7 @@ npm run pages:dev
    ```bash
    npx wrangler pages secret put ADMIN_PASSWORD_HASH
    npx wrangler pages secret put SESSION_SECRET
+   npx wrangler pages secret put SITE_OWNER   # optional
    ```
 4. Deploy:
    ```bash

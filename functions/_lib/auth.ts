@@ -2,6 +2,8 @@ export interface Env {
   DB: D1Database
   ADMIN_PASSWORD_HASH: string
   SESSION_SECRET: string
+  /** Name shown in the page title. Optional — see functions/api/config.ts. */
+  SITE_OWNER?: string
 }
 
 const PBKDF2_ITERATIONS = 100_000
@@ -126,5 +128,5 @@ export function jsonResponse(body: unknown, init?: ResponseInit): Response {
 }
 
 export function unauthorized(): Response {
-  return jsonResponse({ error: '未登录或登录已过期' }, { status: 401 })
+  return jsonResponse({ error: 'Not signed in, or the session has expired' }, { status: 401 })
 }

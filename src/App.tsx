@@ -13,9 +13,24 @@ import {
   type MetricConfig,
   type Tier,
 } from './data/metrics'
-import { getSession, getEntries, createEntry, updateEntry, deleteEntry, logout, ApiError, type ApiEntry } from './api'
+import {
+  getSession,
+  getConfig,
+  setConfig,
+  getEntries,
+  createEntry,
+  updateEntry,
+  deleteEntry,
+  logout,
+  ApiError,
+  type ApiEntry,
+} from './api'
 import { LoginScreen } from './LoginScreen'
 import './App.css'
+
+// Stands in while GET /api/config is in flight, and if it ever fails. Kept in
+// step with DEFAULT_OWNER in functions/api/config.ts.
+const DEFAULT_OWNER = 'Smirnova'
 
 const MOBILE_BREAKPOINT = 640
 const DESKTOP_MIN_WIDTH = 640
@@ -28,6 +43,33 @@ function computeVisibleDays(width: number): number {
   if (width < MOBILE_BREAKPOINT) return MOBILE_DAYS
   const t = Math.min(1, Math.max(0, (width - DESKTOP_MIN_WIDTH) / (DESKTOP_MAX_WIDTH - DESKTOP_MIN_WIDTH)))
   return Math.round(DESKTOP_MIN_DAYS + t * (DESKTOP_MAX_DAYS - DESKTOP_MIN_DAYS))
+}
+
+/** The name in the title is stored in the database and edited from the
+ *  dashboard (see functions/api/config.ts), so renaming needs neither a
+ *  rebuild nor a config change. DEFAULT_OWNER renders while the request is in
+ *  flight, and stands in if it fails. */
+function useSiteOwner(): { owner: string; title: string; rename: (owner: string) => Promise<void> } {
+  const [owner, setOwner] = useState(DEFAULT_OWNER)
+
+  useEffect(() => {
+    getConfig()
+      .then((res) => setOwner(res.owner || DEFAULT_OWNER))
+      .catch(() => {})
+  }, [])
+
+  const title = `${owner}'s Wellbeing`
+
+  useEffect(() => {
+    document.title = title
+  }, [title])
+
+  const rename = useCallback(async (next: string) => {
+    const res = await setConfig(next)
+    setOwner(res.owner)
+  }, [])
+
+  return { owner, title, rename }
 }
 
 function useVisibleDays(): number {
@@ -73,19 +115,43 @@ function useRefreshOnReturn(enabled: boolean, refresh: () => void) {
   }, [enabled])
 }
 
-const WEEKDAYS_ZH = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+// prettier-ignore
+const MONTHS = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+]
 
 function formatDayLabel(date: Date): string {
-  return `${date.getMonth() + 1}月${date.getDate()}日 ${WEEKDAYS_ZH[date.getDay()]}`
+  return `${WEEKDAYS[date.getDay()]}, ${MONTHS_SHORT[date.getMonth()]} ${date.getDate()}`
 }
 
 function formatFullDate(date: Date): string {
-  return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`
+  return `${MONTHS[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`
 }
 
 function byTime(a: ApiEntry, b: ApiEntry): number {
   if (a.time === b.time) return a.id - b.id
   return a.time < b.time ? -1 : 1
+}
+
+/** Narrows to the entries that carry a grade. Text-only ones have nothing to
+ *  plot, so the bars and the statistics skip straight past them. */
+function isGraded(entry: ApiEntry): entry is ApiEntry & { tier: Tier } {
+  return entry.tier !== null
+}
+
+/** Pairs each entry with the grade of the previous graded check-in of the same
+ *  metric, so a diff compares against the last real grade — a text-only entry
+ *  in between neither carries a badge nor breaks the chain. */
+function withPrevTier(entries: ApiEntry[]): { entry: ApiEntry; prevTier: Tier | null }[] {
+  const previous = new Map<string, Tier>()
+  return entries.map((entry) => {
+    const prevTier = entry.tier ? (previous.get(entry.metric_id) ?? null) : null
+    if (entry.tier) previous.set(entry.metric_id, entry.tier)
+    return { entry, prevTier }
+  })
 }
 
 function TierChip({ tier }: { tier: Tier }) {
@@ -99,7 +165,7 @@ function DiffBadge({ metric, from, to }: { metric: MetricConfig; from: Tier; to:
 
   if (delta === 0) {
     return (
-      <span className="diff-badge diff-badge--same" aria-label="与上一次相同">
+      <span className="diff-badge diff-badge--same" aria-label="Same as the previous check-in">
         =
       </span>
     )
@@ -109,7 +175,7 @@ function DiffBadge({ metric, from, to }: { metric: MetricConfig; from: Tier; to:
   return (
     <span
       className={`diff-badge ${worse ? 'diff-badge--worse' : 'diff-badge--better'}`}
-      aria-label={`比上一次${worse ? '差' : '好'} ${Math.abs(delta)} 级`}
+      aria-label={`${Math.abs(delta)} grade${Math.abs(delta) === 1 ? '' : 's'} ${worse ? 'worse' : 'better'} than the previous check-in`}
     >
       {worse ? '↓' : '↑'}
       {Math.abs(delta)}
@@ -184,15 +250,15 @@ function BarTooltip({ tooltip }: { tooltip: TooltipState }) {
       <div className="bar-tooltip-body">
         <div className="bar-tooltip-date">{formatDayLabel(tooltip.date)}</div>
         {tooltip.entries.length === 0 ? (
-          <div className="bar-tooltip-muted">未记录</div>
+          <div className="bar-tooltip-muted">Nothing recorded</div>
         ) : (
           <ul className="tooltip-entries">
-            {tooltip.entries.map((entry, i) => (
+            {withPrevTier(tooltip.entries).map(({ entry, prevTier }) => (
               <li className="tooltip-entry" key={entry.id}>
                 <span className="tooltip-entry-head">
                   <span className="entry-time">{entry.time}</span>
-                  <TierChip tier={entry.tier} />
-                  {i > 0 && <DiffBadge metric={tooltip.metric} from={tooltip.entries[i - 1].tier} to={entry.tier} />}
+                  {entry.tier && <TierChip tier={entry.tier} />}
+                  {entry.tier && prevTier && <DiffBadge metric={tooltip.metric} from={prevTier} to={entry.tier} />}
                 </span>
                 {entry.note && <span className="tooltip-entry-note">{entry.note}</span>}
               </li>
@@ -238,10 +304,20 @@ function Bar({
     })
   }
 
+  const graded = entries.filter(isGraded)
+  const noteOnly = entries.length - graded.length
+
   const label =
     entries.length === 0
-      ? '未记录'
-      : `${entries.length} 次记录,${entries.map((e) => e.tier).join('、')}`
+      ? 'Nothing recorded'
+      : [
+          graded.length > 0
+            ? `${graded.length} check-in${graded.length === 1 ? '' : 's'}: ${graded.map((e) => e.tier).join(', ')}`
+            : null,
+          noteOnly > 0 ? `${noteOnly} text-only note${noteOnly === 1 ? '' : 's'}` : null,
+        ]
+          .filter(Boolean)
+          .join('; ')
 
   return (
     <span
@@ -259,10 +335,10 @@ function Bar({
         reveal()
       }}
     >
-      {entries.length === 0 ? (
-        <span className="bar-seg bar-seg--none" />
+      {graded.length === 0 ? (
+        <span className={`bar-seg bar-seg--none${noteOnly > 0 ? ' bar-seg--note' : ''}`} />
       ) : (
-        entries.map((entry) => <span key={entry.id} className={`bar-seg t-${entry.tier}`} />)
+        graded.map((entry) => <span key={entry.id} className={`bar-seg t-${entry.tier}`} />)
       )}
     </span>
   )
@@ -278,7 +354,7 @@ function TierPicker({
   onChange: (tier: Tier) => void
 }) {
   return (
-    <div className="tier-picker" role="radiogroup" aria-label={`${metric.title}等级`}>
+    <div className="tier-picker" role="radiogroup" aria-label={`${metric.title} grade`}>
       {metric.tiers.map((tier) => (
         <button
           key={tier}
@@ -301,9 +377,34 @@ function TierPicker({
 function TimeField({ value, onChange }: { value: string; onChange: (time: string) => void }) {
   return (
     <label className="time-field">
-      <span className="time-field-label">时间</span>
+      <span className="time-field-label">Time</span>
       <input type="time" value={value} onChange={(e) => onChange(e.target.value)} />
     </label>
+  )
+}
+
+type EntryMode = 'tier' | 'note'
+
+/** Whether a check-in records a grade or is text only. */
+function ModeToggle({ mode, onChange }: { mode: EntryMode; onChange: (mode: EntryMode) => void }) {
+  return (
+    <div className="mode-toggle" role="tablist" aria-label="Entry type">
+      {(['tier', 'note'] as const).map((value) => (
+        <button
+          key={value}
+          type="button"
+          role="tab"
+          aria-selected={mode === value}
+          className={`mode-toggle-btn${mode === value ? ' is-selected' : ''}`}
+          onClick={(e) => {
+            e.stopPropagation()
+            onChange(value)
+          }}
+        >
+          {value === 'tier' ? 'Grade' : 'Text only'}
+        </button>
+      ))}
+    </div>
   )
 }
 
@@ -314,9 +415,10 @@ function CheckInForm({
 }: {
   metric: MetricConfig
   todayCount: number
-  onSave: (tier: Tier, time: string, note: string) => Promise<void>
+  onSave: (tier: Tier | null, time: string, note: string) => Promise<void>
 }) {
   const [editing, setEditing] = useState(false)
+  const [mode, setMode] = useState<EntryMode>('tier')
   const [tier, setTier] = useState<Tier>(metric.tiers[0])
   const [time, setTime] = useState(nowTimeKey)
   const [note, setNote] = useState('')
@@ -324,6 +426,7 @@ function CheckInForm({
   const [error, setError] = useState<string | null>(null)
 
   function open() {
+    setMode('tier')
     setTier(metric.tiers[0])
     setTime(nowTimeKey())
     setNote('')
@@ -342,7 +445,7 @@ function CheckInForm({
             open()
           }}
         >
-          {todayCount > 0 ? '再记一次' : '记录现在'}
+          {todayCount > 0 ? 'Add another' : 'Check in now'}
         </button>
       </div>
     )
@@ -352,10 +455,10 @@ function CheckInForm({
     setSaving(true)
     setError(null)
     try {
-      await onSave(tier, time, note)
+      await onSave(mode === 'tier' ? tier : null, time, note)
       setEditing(false)
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : '保存失败,请重试。')
+      setError(err instanceof ApiError ? err.message : 'Could not save. Please try again.')
     } finally {
       setSaving(false)
     }
@@ -363,23 +466,33 @@ function CheckInForm({
 
   return (
     <div className="checkin-form" onClick={(e) => e.stopPropagation()}>
-      <p className="checkin-label">现在是哪一级</p>
-      <TierPicker metric={metric} value={tier} onChange={setTier} />
+      <ModeToggle mode={mode} onChange={setMode} />
+      {mode === 'tier' && (
+        <>
+          <p className="checkin-label">Which grade right now?</p>
+          <TierPicker metric={metric} value={tier} onChange={setTier} />
+        </>
+      )}
       <TimeField value={time} onChange={setTime} />
       <textarea
         className="checkin-note"
-        placeholder="写点笔记(选填)"
+        placeholder={mode === 'tier' ? 'Add a note (optional)' : 'Write something'}
         value={note}
         onChange={(e) => setNote(e.target.value)}
-        rows={2}
+        rows={mode === 'tier' ? 2 : 3}
       />
       {error && <p className="checkin-error">{error}</p>}
       <div className="checkin-actions">
         <button type="button" className="checkin-cancel" onClick={() => setEditing(false)}>
-          取消
+          Cancel
         </button>
-        <button type="button" className="button-primary" onClick={handleSave} disabled={saving}>
-          {saving ? '保存中…' : '保存'}
+        <button
+          type="button"
+          className="button-primary"
+          onClick={handleSave}
+          disabled={saving || (mode === 'note' && !note.trim())}
+        >
+          {saving ? 'Saving…' : 'Save'}
         </button>
       </div>
     </div>
@@ -401,7 +514,7 @@ function MetricRow({
   canManage: boolean
   onShowTooltip: (tooltip: TooltipState) => void
   onHideTooltip: () => void
-  onCreateEntry: (tier: Tier, time: string, note: string) => Promise<void>
+  onCreateEntry: (tier: Tier | null, time: string, note: string) => Promise<void>
 }) {
   const days = useMemo(() => {
     const list: { date: Date; entries: ApiEntry[] }[] = []
@@ -413,16 +526,19 @@ function MetricRow({
   }, [metric.id, visibleDays, entriesByDay])
 
   const todayEntries = entriesByDay.get(`${metric.id}|${todayKey()}`) ?? []
-  const latest = todayEntries.at(-1)
+  // Text-only entries carry no grade, so everything below that summarises the
+  // scale — the chip, the percentage, the swing, the chain — works off these.
+  const todayGraded = todayEntries.filter(isGraded)
+  const latest = todayGraded.at(-1)
   // Averaged over every check-in in the window, not one value per day, so a day
   // logged five times counts five times.
   const percent = goodPercent(
     metric,
-    days.flatMap((d) => d.entries.map((e) => e.tier)),
+    days.flatMap((d) => d.entries.filter(isGraded).map((e) => e.tier)),
   )
   const swing = tierRange(
     metric,
-    todayEntries.map((e) => e.tier),
+    todayGraded.map((e) => e.tier),
   )
 
   return (
@@ -430,16 +546,16 @@ function MetricRow({
       <div className="metric-head">
         <h2 className="metric-title">{metric.title}</h2>
         <span className="metric-state">
-          {latest ? <TierChip tier={latest.tier} /> : <span className="metric-state-none">未记录</span>}
-          {todayEntries.length > 1 && swing && (
+          {latest ? <TierChip tier={latest.tier} /> : <span className="metric-state-none">Not recorded</span>}
+          {todayGraded.length > 1 && swing && (
             <span className="metric-swing">
-              今天 {todayEntries.length} 次 · {swing.best}–{swing.worst}
+              {todayGraded.length} today · {swing.best}–{swing.worst}
             </span>
           )}
         </span>
       </div>
 
-      <div className="day-bars" role="img" aria-label={`${metric.title}:过去 ${days.length} 天的自我记录`}>
+      <div className="day-bars" role="img" aria-label={`${metric.title}: self-reported over the last ${days.length} days`}>
         {days.map(({ date, entries }, i) => (
           <Bar
             key={i}
@@ -453,19 +569,19 @@ function MetricRow({
       </div>
 
       <div className="metric-foot">
-        <span className="foot-label">{visibleDays} 天前</span>
+        <span className="foot-label">{visibleDays} days ago</span>
         <span className="foot-line" aria-hidden="true" />
-        <span className="foot-stat">{percent === null ? '还没有记录' : `${percent.toFixed(1)}% 状态良好`}</span>
+        <span className="foot-stat">{percent === null ? 'Nothing recorded yet' : `${percent.toFixed(1)}% doing well`}</span>
         <span className="foot-line" aria-hidden="true" />
-        <span className="foot-label">今天</span>
+        <span className="foot-label">Today</span>
       </div>
 
-      {todayEntries.length > 1 && (
+      {todayGraded.length > 1 && (
         <div className="today-chain">
-          <span className="today-chain-label">今天的变化</span>
-          {todayEntries.map((entry, i) => (
+          <span className="today-chain-label">How today moved</span>
+          {todayGraded.map((entry, i) => (
             <span className="today-chain-step" key={entry.id}>
-              {i > 0 && <DiffBadge metric={metric} from={todayEntries[i - 1].tier} to={entry.tier} />}
+              {i > 0 && <DiffBadge metric={metric} from={todayGraded[i - 1].tier} to={entry.tier} />}
               <span className="entry-time">{entry.time}</span>
               <TierChip tier={entry.tier} />
             </span>
@@ -490,11 +606,12 @@ function LogEntryRow({
   metric: MetricConfig
   prevTier: Tier | null
   canManage: boolean
-  onSave?: (id: number, patch: { tier: Tier; time: string; note: string | null }) => Promise<void>
+  onSave?: (id: number, patch: { tier: Tier | null; time: string; note: string | null }) => Promise<void>
   onDelete?: (id: number) => Promise<void>
 }) {
   const [editing, setEditing] = useState(false)
-  const [tier, setTier] = useState<Tier>(entry.tier)
+  const [mode, setMode] = useState<EntryMode>(entry.tier ? 'tier' : 'note')
+  const [tier, setTier] = useState<Tier>(entry.tier ?? metric.tiers[0])
   const [time, setTime] = useState(entry.time)
   const [note, setNote] = useState(entry.note ?? '')
   const [saving, setSaving] = useState(false)
@@ -503,7 +620,8 @@ function LogEntryRow({
   const [deleting, setDeleting] = useState(false)
 
   function open() {
-    setTier(entry.tier)
+    setMode(entry.tier ? 'tier' : 'note')
+    setTier(entry.tier ?? metric.tiers[0])
     setTime(entry.time)
     setNote(entry.note ?? '')
     setError(null)
@@ -516,10 +634,10 @@ function LogEntryRow({
     setSaving(true)
     setError(null)
     try {
-      await onSave(entry.id, { tier, time, note: note.trim() || null })
+      await onSave(entry.id, { tier: mode === 'tier' ? tier : null, time, note: note.trim() || null })
       setEditing(false)
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : '保存失败,请重试。')
+      setError(err instanceof ApiError ? err.message : 'Could not save. Please try again.')
     } finally {
       setSaving(false)
     }
@@ -532,7 +650,7 @@ function LogEntryRow({
     try {
       await onDelete(entry.id)
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : '删除失败,请重试。')
+      setError(err instanceof ApiError ? err.message : 'Could not delete. Please try again.')
       setDeleting(false)
     }
   }
@@ -541,8 +659,8 @@ function LogEntryRow({
     <div className="log-entry">
       <div className="log-entry-head">
         <span className="entry-time">{entry.time}</span>
-        <TierChip tier={entry.tier} />
-        {prevTier && <DiffBadge metric={metric} from={prevTier} to={entry.tier} />}
+        {entry.tier && <TierChip tier={entry.tier} />}
+        {entry.tier && prevTier && <DiffBadge metric={metric} from={prevTier} to={entry.tier} />}
         <span className="log-entry-metric">{metric.title}</span>
         {canManage && !editing && (
           <button
@@ -553,7 +671,7 @@ function LogEntryRow({
               open()
             }}
           >
-            编辑
+            Edit
           </button>
         )}
       </div>
@@ -562,22 +680,23 @@ function LogEntryRow({
 
       {editing && (
         <div className="log-entry-form" onClick={(e) => e.stopPropagation()}>
-          <TierPicker metric={metric} value={tier} onChange={setTier} />
+          <ModeToggle mode={mode} onChange={setMode} />
+          {mode === 'tier' && <TierPicker metric={metric} value={tier} onChange={setTier} />}
           <TimeField value={time} onChange={setTime} />
           <textarea
             className="checkin-note"
-            placeholder="写点笔记(选填)"
+            placeholder={mode === 'tier' ? 'Add a note (optional)' : 'Write something'}
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            rows={2}
+            rows={mode === 'tier' ? 2 : 3}
           />
           {error && <p className="checkin-error">{error}</p>}
           <div className="log-entry-actions">
             {confirmingDelete ? (
               <span className="log-entry-confirm">
-                确定删除?
+                Delete this?
                 <button type="button" className="log-entry-confirm-yes" onClick={handleDelete} disabled={deleting}>
-                  {deleting ? '删除中…' : '删除'}
+                  {deleting ? 'Deleting…' : 'Delete'}
                 </button>
                 <button
                   type="button"
@@ -585,20 +704,25 @@ function LogEntryRow({
                   onClick={() => setConfirmingDelete(false)}
                   disabled={deleting}
                 >
-                  取消
+                  Cancel
                 </button>
               </span>
             ) : (
               <button type="button" className="log-entry-delete" onClick={() => setConfirmingDelete(true)}>
-                删除
+                Delete
               </button>
             )}
             <span className="log-entry-actions-right">
               <button type="button" className="checkin-cancel" onClick={() => setEditing(false)}>
-                取消
+                Cancel
               </button>
-              <button type="button" className="button-primary" onClick={handleSave} disabled={saving}>
-                {saving ? '保存中…' : '保存'}
+              <button
+                type="button"
+                className="button-primary"
+                onClick={handleSave}
+                disabled={saving || (mode === 'note' && !note.trim())}
+              >
+                {saving ? 'Saving…' : 'Save'}
               </button>
             </span>
           </div>
@@ -608,26 +732,85 @@ function LogEntryRow({
   )
 }
 
+function BrandEditor({
+  owner,
+  onSave,
+  onCancel,
+}: {
+  owner: string
+  onSave: (owner: string) => Promise<void>
+  onCancel: () => void
+}) {
+  const [value, setValue] = useState(owner)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleSave() {
+    if (!value.trim()) return
+    setSaving(true)
+    setError(null)
+    try {
+      await onSave(value.trim())
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not save. Please try again.')
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="brand-edit" onClick={(e) => e.stopPropagation()}>
+      <input
+        className="brand-input"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') handleSave()
+          if (e.key === 'Escape') onCancel()
+        }}
+        maxLength={40}
+        autoFocus
+        aria-label="Name shown in the title"
+      />
+      {error && <p className="brand-error">{error}</p>}
+      <div className="brand-edit-actions">
+        <button type="button" className="checkin-cancel" onClick={onCancel}>
+          Cancel
+        </button>
+        <button type="button" className="button-primary" onClick={handleSave} disabled={saving || !value.trim()}>
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function Dashboard({
+  owner,
+  title,
   entries,
   entriesError,
   visibleDays,
   canManage,
   onLogout,
+  onRenameOwner,
   onCreateEntry,
   onSaveEntry,
   onDeleteEntry,
 }: {
+  owner: string
+  title: string
   entries: ApiEntry[]
   entriesError: string | null
   visibleDays: number
   canManage: boolean
   onLogout?: () => void
-  onCreateEntry?: (metricId: string, tier: Tier, time: string, note: string) => Promise<void>
-  onSaveEntry?: (id: number, patch: { tier: Tier; time: string; note: string | null }) => Promise<void>
+  onRenameOwner?: (owner: string) => Promise<void>
+  onCreateEntry?: (metricId: string, tier: Tier | null, time: string, note: string) => Promise<void>
+  onSaveEntry?: (id: number, patch: { tier: Tier | null; time: string; note: string | null }) => Promise<void>
   onDeleteEntry?: (id: number) => Promise<void>
 }) {
   const [tooltip, setTooltip] = useState<TooltipState | null>(null)
+  const [renaming, setRenaming] = useState(false)
   const todayLabel = formatDayLabel(new Date())
 
   useEffect(() => {
@@ -661,25 +844,45 @@ function Dashboard({
     }
     return Array.from(byDate.keys())
       .sort((a, b) => (a < b ? 1 : -1))
-      .map((date) => {
-        const previous = new Map<string, Tier>()
-        const rows = [...byDate.get(date)!].sort(byTime).map((entry) => {
-          const prevTier = previous.get(entry.metric_id) ?? null
-          previous.set(entry.metric_id, entry.tier)
-          return { entry, prevTier }
-        })
-        return { date, label: formatFullDate(parseDateKey(date)), rows }
-      })
+      .map((date) => ({
+        date,
+        label: formatFullDate(parseDateKey(date)),
+        rows: withPrevTier([...byDate.get(date)!].sort(byTime)),
+      }))
   }, [entries])
 
   return (
     <div className="page" onClick={() => setTooltip(null)}>
       <header className="topbar">
-        <div className="brand">Smirnova 的身心健康</div>
+        {renaming ? (
+          <BrandEditor
+            owner={owner}
+            onSave={async (next) => {
+              await onRenameOwner!(next)
+              setRenaming(false)
+            }}
+            onCancel={() => setRenaming(false)}
+          />
+        ) : (
+          <div className="brand">{title}</div>
+        )}
         <div className="topbar-meta">
           <span className="today-date">{todayLabel}</span>
-          {canManage && (
+          {canManage && !renaming && (
             <>
+              <span className="topbar-divider" aria-hidden="true">
+                ·
+              </span>
+              <button
+                type="button"
+                className="kicker-action"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setRenaming(true)
+                }}
+              >
+                Rename
+              </button>
               <span className="topbar-divider" aria-hidden="true">
                 ·
               </span>
@@ -691,7 +894,7 @@ function Dashboard({
                   onLogout?.()
                 }}
               >
-                退出登录
+                Sign out
               </button>
             </>
           )}
@@ -717,28 +920,30 @@ function Dashboard({
         </section>
 
         <section className="logs">
-          <h2 className="logs-title">记录</h2>
+          <h2 className="logs-title">Log</h2>
           {logGroups.length === 0 ? (
-            <p className="logs-empty">还没有任何记录。</p>
+            <p className="logs-empty">Nothing recorded yet.</p>
           ) : (
-            logGroups.map((group) => (
-              <div className="log-group" key={group.date}>
-                <h3 className="log-date">{group.label}</h3>
-                <div className="log-entries">
-                  {group.rows.map(({ entry, prevTier }) => (
-                    <LogEntryRow
-                      key={entry.id}
-                      entry={entry}
-                      metric={metricFor(entry.metric_id)}
-                      prevTier={prevTier}
-                      canManage={canManage}
-                      onSave={onSaveEntry}
-                      onDelete={onDeleteEntry}
-                    />
-                  ))}
+            <div className="log-vine">
+              {logGroups.map((group) => (
+                <div className="log-group" key={group.date}>
+                  <h3 className="log-date">{group.label}</h3>
+                  <div className="log-entries">
+                    {group.rows.map(({ entry, prevTier }) => (
+                      <LogEntryRow
+                        key={entry.id}
+                        entry={entry}
+                        metric={metricFor(entry.metric_id)}
+                        prevTier={prevTier}
+                        canManage={canManage}
+                        onSave={onSaveEntry}
+                        onDelete={onDeleteEntry}
+                      />
+                    ))}
+                  </div>
                 </div>
-              </div>
-            ))
+              ))}
+            </div>
           )}
         </section>
       </main>
@@ -752,6 +957,7 @@ type AuthState = 'loading' | 'signed-out' | 'signed-in'
 
 export function AdminApp() {
   const visibleDays = useVisibleDays()
+  const { owner, title, rename } = useSiteOwner()
   const [authState, setAuthState] = useState<AuthState>('loading')
   const [entries, setEntries] = useState<ApiEntry[]>([])
   const [entriesError, setEntriesError] = useState<string | null>(null)
@@ -762,7 +968,7 @@ export function AdminApp() {
         setEntries(res.entries)
         setEntriesError(null)
       })
-      .catch((err) => setEntriesError(err instanceof ApiError ? err.message : '加载记录失败'))
+      .catch((err) => setEntriesError(err instanceof ApiError ? err.message : 'Could not load the log'))
   }, [])
 
   useEffect(() => {
@@ -777,12 +983,12 @@ export function AdminApp() {
 
   useRefreshOnReturn(authState === 'signed-in', loadEntries)
 
-  async function handleCreateEntry(metricId: string, tier: Tier, time: string, note: string) {
+  async function handleCreateEntry(metricId: string, tier: Tier | null, time: string, note: string) {
     const { entry } = await createEntry({ metricId, date: todayKey(), time, tier, note: note.trim() || null })
     setEntries((prev) => [...prev, entry])
   }
 
-  async function handleSaveEntry(id: number, patch: { tier: Tier; time: string; note: string | null }) {
+  async function handleSaveEntry(id: number, patch: { tier: Tier | null; time: string; note: string | null }) {
     const { entry } = await updateEntry(id, patch)
     setEntries((prev) => prev.map((e) => (e.id === entry.id ? entry : e)))
   }
@@ -803,16 +1009,19 @@ export function AdminApp() {
   }
 
   if (authState === 'signed-out') {
-    return <LoginScreen onSuccess={() => setAuthState('signed-in')} />
+    return <LoginScreen title={title} onSuccess={() => setAuthState('signed-in')} />
   }
 
   return (
     <Dashboard
+      owner={owner}
+      title={title}
       entries={entries}
       entriesError={entriesError}
       visibleDays={visibleDays}
       canManage
       onLogout={handleLogout}
+      onRenameOwner={rename}
       onCreateEntry={handleCreateEntry}
       onSaveEntry={handleSaveEntry}
       onDeleteEntry={handleDeleteEntry}
@@ -822,6 +1031,7 @@ export function AdminApp() {
 
 export function PublicApp() {
   const visibleDays = useVisibleDays()
+  const { owner, title } = useSiteOwner()
   const [loaded, setLoaded] = useState(false)
   const [entries, setEntries] = useState<ApiEntry[]>([])
   const [entriesError, setEntriesError] = useState<string | null>(null)
@@ -832,7 +1042,7 @@ export function PublicApp() {
         setEntries(res.entries)
         setEntriesError(null)
       })
-      .catch((err) => setEntriesError(err instanceof ApiError ? err.message : '加载记录失败'))
+      .catch((err) => setEntriesError(err instanceof ApiError ? err.message : 'Could not load the log'))
       .finally(() => setLoaded(true))
   }, [])
 
@@ -846,5 +1056,14 @@ export function PublicApp() {
     return <div className="page login-page" aria-busy="true" />
   }
 
-  return <Dashboard entries={entries} entriesError={entriesError} visibleDays={visibleDays} canManage={false} />
+  return (
+    <Dashboard
+      owner={owner}
+      title={title}
+      entries={entries}
+      entriesError={entriesError}
+      visibleDays={visibleDays}
+      canManage={false}
+    />
+  )
 }

@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { login, ApiError } from './api'
 
-export function LoginScreen({ onSuccess }: { onSuccess: () => void }) {
+export function LoginScreen({ title, onSuccess }: { title: string; onSuccess: () => void }) {
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -14,7 +14,7 @@ export function LoginScreen({ onSuccess }: { onSuccess: () => void }) {
       await login(password)
       onSuccess()
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : '出了点问题,请重试。')
+      setError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.')
     } finally {
       setSubmitting(false)
     }
@@ -23,12 +23,12 @@ export function LoginScreen({ onSuccess }: { onSuccess: () => void }) {
   return (
     <div className="page login-page">
       <form className="login-form" onSubmit={handleSubmit}>
-        <h1 className="login-title">Smirnova 的身心健康</h1>
-        <p className="login-subtitle">登录后继续。</p>
+        <h1 className="login-title">{title}</h1>
+        <p className="login-subtitle">Sign in to continue.</p>
         <input
           type="password"
           className="login-input"
-          placeholder="密码"
+          placeholder="Password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           autoFocus
@@ -36,7 +36,7 @@ export function LoginScreen({ onSuccess }: { onSuccess: () => void }) {
         />
         {error && <p className="login-error">{error}</p>}
         <button type="submit" className="login-submit button-primary" disabled={submitting || !password}>
-          {submitting ? '登录中…' : '登录'}
+          {submitting ? 'Signing in…' : 'Sign in'}
         </button>
       </form>
     </div>
