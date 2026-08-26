@@ -462,10 +462,26 @@
   margin-top: clamp(32px, 6vw, 48px);
 }
 
+/* The heading and the span of days on this page share a baseline, so the range
+   reads as a subtitle to "Log" rather than as another control. */
+.logs-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
 .logs-title {
   font-size: clamp(1.25rem, 4vw, 1.5rem);
   font-weight: 600;
-  margin-bottom: 16px;
+}
+
+.logs-range {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .logs-empty {
@@ -704,6 +720,46 @@
 .log-entry-confirm-no:disabled {
   opacity: 0.6;
   cursor: default;
+}
+
+/* Paging sits under the vine's tip in the same muted register as the log's own
+   inline actions, so it reads as the end of the list rather than a control bar.
+   Both steps stay in place when they are unavailable, so the row does not
+   reflow at either end of the history. */
+.log-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.log-pager-step {
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px 0;
+  transition: color 150ms ease;
+}
+
+.log-pager-step:hover:not(:disabled) {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.log-pager-step:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.log-pager-count {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 /* ── Forms ─────────────────────────────────────────────────────────────── */

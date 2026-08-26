@@ -42,6 +42,11 @@ const MOBILE_DAYS = 30
 const DESKTOP_MIN_DAYS = 60
 const DESKTOP_MAX_DAYS = 90
 
+// The log is paged so a long history is not rendered in one go. A page holds
+// whole days rather than a fixed number of entries, so a day that was checked
+// in five times is never split across the break.
+const LOG_DAYS_PER_PAGE = 10
+
 function computeVisibleDays(width: number): number {
   if (width < MOBILE_BREAKPOINT) return MOBILE_DAYS
   const t = Math.min(1, Math.max(0, (width - DESKTOP_MIN_WIDTH) / (DESKTOP_MAX_WIDTH - DESKTOP_MIN_WIDTH)))
@@ -132,6 +137,19 @@ function formatDayLabel(date: Date): string {
 
 function formatFullDate(date: Date): string {
   return `${MONTHS[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`
+}
+
+/** Drops the year while it is the current one, so the usual case reads as
+ *  "Aug 17" and a page that has scrolled back into last year still says so. */
+function formatCompactDate(date: Date): string {
+  const year = date.getFullYear() === new Date().getFullYear() ? '' : ` ${date.getFullYear()}`
+  return `${MONTHS_SHORT[date.getMonth()]} ${date.getDate()}${year}`
+}
+
+function formatDateRange(oldest: Date, newest: Date): string {
+  const from = formatCompactDate(oldest)
+  const to = formatCompactDate(newest)
+  return from === to ? to : `${from} – ${to}`
 }
 
 function byTime(a: ApiEntry, b: ApiEntry): number {
@@ -932,6 +950,8 @@ function Dashboard({
 }) {
   const [tooltip, setTooltip] = useState<TooltipState | null>(null)
   const [renaming, setRenaming] = useState(false)
+  const [logPage, setLogPage] = useState(0)
+  const logsRef = useRef<HTMLElement>(null)
   const todayLabel = formatDayLabel(new Date())
 
   useEffect(() => {
@@ -971,6 +991,31 @@ function Dashboard({
         rows: withPrevTier([...byDate.get(date)!].sort(byTime)),
       }))
   }, [entries])
+
+  // The page index is clamped as it is read rather than reset when the data
+  // changes, so editing or deleting an entry leaves you on the page you were
+  // reading — unless deleting the last of a day collapsed that page away.
+  const pageCount = Math.max(1, Math.ceil(logGroups.length / LOG_DAYS_PER_PAGE))
+  const logPageIndex = Math.min(logPage, pageCount - 1)
+  const pageGroups = useMemo(
+    () => logGroups.slice(logPageIndex * LOG_DAYS_PER_PAGE, (logPageIndex + 1) * LOG_DAYS_PER_PAGE),
+    [logGroups, logPageIndex],
+  )
+  // Newest day first, so the range runs from the last group to the first.
+  const pageRange =
+    pageGroups.length === 0
+      ? null
+      : formatDateRange(parseDateKey(pageGroups[pageGroups.length - 1].date), parseDateKey(pageGroups[0].date))
+
+  // Paging pulls the top of the log back into view: stepping from a tall page
+  // to a short one would otherwise leave you scrolled past the end of it. The
+  // jump is deliberately not smooth — `body` is what scrolls here (index.css
+  // gives html and body a height and hides their overflow-x), and an animated
+  // scroll on that box is silently ignored.
+  const goToLogPage = useCallback((next: number) => {
+    setLogPage(next)
+    logsRef.current?.scrollIntoView({ behavior: 'auto', block: 'start' })
+  }, [])
 
   return (
     <div className="page" onClick={() => setTooltip(null)}>
@@ -1035,18 +1080,26 @@ function Dashboard({
               canManage={canManage}
               onShowTooltip={setTooltip}
               onHideTooltip={() => setTooltip(null)}
-              onCreateEntry={(tier, time, note) => onCreateEntry!(metric.id, tier, time, note)}
+              onCreateEntry={async (tier, time, note) => {
+                await onCreateEntry!(metric.id, tier, time, note)
+                // Today is always the first group, so jump back rather than
+                // filing the check-in onto a page the user is not looking at.
+                setLogPage(0)
+              }}
             />
           ))}
         </section>
 
-        <section className="logs">
-          <h2 className="logs-title">Log</h2>
+        <section className="logs" ref={logsRef}>
+          <div className="logs-head">
+            <h2 className="logs-title">Log</h2>
+            {pageRange && <span className="logs-range">{pageRange}</span>}
+          </div>
           {logGroups.length === 0 ? (
             <p className="logs-empty">Nothing recorded yet.</p>
           ) : (
             <div className="log-vine">
-              {logGroups.map((group) => (
+              {pageGroups.map((group) => (
                 <div className="log-group" key={group.date}>
                   <h3 className="log-date">{group.label}</h3>
                   <div className="log-entries">
@@ -1065,6 +1118,30 @@ function Dashboard({
                 </div>
               ))}
             </div>
+          )}
+
+          {pageCount > 1 && (
+            <nav className="log-pager" aria-label="Log pages">
+              <button
+                type="button"
+                className="log-pager-step"
+                onClick={() => goToLogPage(logPageIndex - 1)}
+                disabled={logPageIndex === 0}
+              >
+                ← Newer
+              </button>
+              <span className="log-pager-count" aria-live="polite">
+                Page {logPageIndex + 1} of {pageCount}
+              </span>
+              <button
+                type="button"
+                className="log-pager-step"
+                onClick={() => goToLogPage(logPageIndex + 1)}
+                disabled={logPageIndex === pageCount - 1}
+              >
+                Older →
+              </button>
+            </nav>
           )}
         </section>
       </main>
