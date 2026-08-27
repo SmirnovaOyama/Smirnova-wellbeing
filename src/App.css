@@ -1,3 +1,75 @@
+/* ── Motion ────────────────────────────────────────────────────────────────
+   The curves live in index.css. Everything that uses them goes through a
+   transition or an animation, so the reduced-motion rule there switches the
+   whole lot off in one go.
+
+   The text buttons share one underline: a hairline that wipes out from the
+   left, fast at first and slow into the last of the word, rather than the flat
+   `text-decoration` they used to swap in. */
+
+.kicker-action,
+.checkin-toggle,
+.log-entry-edit,
+.log-pager-step,
+.note-attach {
+  position: relative;
+}
+
+.kicker-action::after,
+.checkin-toggle::after,
+.log-entry-edit::after,
+.log-pager-step::after,
+.note-attach::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  border-radius: 1px;
+  background: currentColor;
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 300ms var(--ease-out);
+}
+
+/* Real hover only — the same reason the bars are scoped that way: a tap leaves
+   WebKit's synthetic :hover behind, and a row of stuck underlines is worse
+   than none at all. */
+@media (hover: hover) {
+  .kicker-action:hover::after,
+  .checkin-toggle:hover::after,
+  .log-entry-edit:hover::after,
+  .note-attach:hover:not(:disabled)::after,
+  .log-pager-step:hover:not(:disabled)::after {
+    transform: scaleX(1);
+  }
+}
+
+/* A panel unfolding from its own top edge. */
+@keyframes reveal {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scaleY(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scaleY(1);
+  }
+}
+
+/* Something small arriving in place. */
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 .page {
   max-width: 860px;
   margin: 0 auto;
@@ -46,12 +118,11 @@
   color: var(--text-muted);
   cursor: pointer;
   padding: 0;
-  transition: color 150ms ease;
+  transition: color 200ms var(--ease-fade);
 }
 
 .kicker-action:hover {
   color: var(--text);
-  text-decoration: underline;
 }
 
 /* Renaming happens in place of the title, so the header does not jump when the
@@ -224,6 +295,11 @@
   overscroll-behavior-x: contain;
   -webkit-overflow-scrolling: touch;
   touch-action: pan-x;
+  /* Headroom for the pop below. This box scrolls sideways, so its overflow is
+     no longer `visible` on either axis — a bar reaching past the padding edge
+     would be cut off rather than spill. A 34px bar at scaleY(1.12) reaches
+     4.1px above the row, and this has to clear it. */
+  padding-top: 5px;
   padding-bottom: 6px;
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
@@ -253,11 +329,17 @@
   border-radius: 1px;
   overflow: hidden;
   cursor: pointer;
-  transition: filter 150ms ease;
+  transform-origin: bottom center;
+  transition:
+    filter 200ms var(--ease-fade),
+    transform 300ms var(--ease-out);
 }
 
+/* Rooted at the baseline, so the day grows up out of the row rather than
+   swelling around its middle. */
 .bar:focus-visible {
   filter: brightness(1.2);
+  transform: scaleY(1.12);
 }
 
 /* Scoped to real hover so a touch swipe across the bars can't leave WebKit's
@@ -266,6 +348,7 @@
 @media (hover: hover) {
   .bar:hover {
     filter: brightness(1.2);
+    transform: scaleY(1.12);
   }
 }
 
@@ -352,6 +435,20 @@
   }
 }
 
+/* Opens from wherever the arrow ended up. The translateX is the box's own
+   centring transform and has to be carried through every frame, or the box
+   would jump half its width as the animation starts. */
+@keyframes tooltip-pop {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) scale(1);
+  }
+}
+
 /* `top` is the box's real top edge — BarTooltip measures the box and clamps it
    into the safe area, so there is no vertical transform to undo here. */
 .bar-tooltip {
@@ -365,7 +462,13 @@
   background: var(--surface);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
   pointer-events: none;
-  animation: fade-in 120ms ease-out;
+  transform-origin: var(--arrow-x, 50%) 100%;
+  animation: tooltip-pop 200ms var(--ease-out);
+}
+
+/* Below the bar now, so it unfolds downwards from its top edge instead. */
+.bar-tooltip--flip {
+  transform-origin: var(--arrow-x, 50%) 0;
 }
 
 /* The scroll cap lives on the body, not the box: the arrow is drawn outside the
@@ -639,7 +742,6 @@
 
 .log-entry-edit:hover {
   color: var(--accent);
-  text-decoration: underline;
 }
 
 .log-entry-note {
@@ -656,7 +758,8 @@
   margin-top: 2px;
   padding-top: 12px;
   border-top: 1px solid var(--border);
-  animation: fade-in 150ms ease-out;
+  transform-origin: top center;
+  animation: reveal 280ms var(--ease-out);
 }
 
 .log-entry-actions {
@@ -693,6 +796,7 @@
   gap: 8px;
   font-size: 0.8125rem;
   color: var(--text-muted);
+  animation: pop-in 220ms var(--ease-out);
 }
 
 .log-entry-confirm-yes,
@@ -748,7 +852,23 @@
 
 .log-pager-step:hover:not(:disabled) {
   color: var(--accent);
-  text-decoration: underline;
+}
+
+/* The arrow leads the way out of the button, so the step reads as a direction
+   before it reads as a click. */
+.log-pager-arrow {
+  display: inline-block;
+  transition: transform 300ms var(--ease-out);
+}
+
+@media (hover: hover) {
+  .log-pager-step:hover:not(:disabled) .log-pager-arrow--prev {
+    transform: translateX(-5px);
+  }
+
+  .log-pager-step:hover:not(:disabled) .log-pager-arrow--next {
+    transform: translateX(5px);
+  }
 }
 
 .log-pager-step:disabled {
@@ -775,13 +895,24 @@
   padding: 8px 16px;
   cursor: pointer;
   transition:
-    background-color 150ms ease,
-    color 150ms ease;
+    background-color 220ms var(--ease-fade),
+    color 220ms var(--ease-fade),
+    transform 280ms var(--ease-out);
 }
 
-.button-primary:hover {
-  background: var(--accent);
-  color: var(--bg);
+@media (hover: hover) {
+  .button-primary:hover:not(:disabled) {
+    background: var(--accent);
+    color: var(--bg);
+    transform: translateY(-2px);
+  }
+}
+
+/* The press goes down in a tenth of the time the release takes to spring back:
+   the same short distance, covered at two very different rates. */
+.button-primary:active:not(:disabled) {
+  transform: translateY(1px) scale(0.97);
+  transition-duration: 90ms;
 }
 
 .button-primary:focus-visible {
@@ -813,7 +944,6 @@
 
 .checkin-toggle:hover {
   color: var(--accent);
-  text-decoration: underline;
 }
 
 .checkin-form {
@@ -823,7 +953,8 @@
   margin-top: 8px;
   padding-top: 14px;
   border-top: 1px solid var(--border);
-  animation: fade-in 150ms ease-out;
+  transform-origin: top center;
+  animation: reveal 280ms var(--ease-out);
 }
 
 .checkin-label {
@@ -872,12 +1003,13 @@
   height: 2px;
   border-radius: 1px;
   background: var(--accent);
-  opacity: 0;
-  transition: opacity 150ms ease;
+  transform: scaleX(0);
+  transition: transform 300ms var(--ease-out);
 }
 
+/* Opens from the middle out to the label's width. */
 .mode-toggle-btn.is-selected::after {
-  opacity: 1;
+  transform: scaleX(1);
 }
 
 .tier-picker {
@@ -896,8 +1028,20 @@
   font-weight: 700;
   cursor: pointer;
   transition:
-    border-color 150ms ease,
-    color 150ms ease;
+    border-color 200ms var(--ease-fade),
+    color 200ms var(--ease-fade),
+    transform 300ms var(--ease-out);
+}
+
+/* Lifts off the row, so choosing a grade is felt and not only seen. Nothing
+   here is in flow, so the row does not move. */
+.tier-picker-btn.is-selected {
+  transform: translateY(-3px) scale(1.05);
+}
+
+.tier-picker-btn:active {
+  transform: scale(0.94);
+  transition-duration: 110ms;
 }
 
 /* Scoped away from the selected button so the grade's own .t-* fill, which has
@@ -989,10 +1133,6 @@
   transition: opacity 150ms ease;
 }
 
-.note-attach:hover:not(:disabled) {
-  text-decoration: underline;
-}
-
 .note-attach:disabled {
   color: var(--text-muted);
   cursor: default;
@@ -1020,6 +1160,42 @@
   margin: 6px 0;
   border: 1px solid var(--border);
   border-radius: 8px;
+}
+
+/* A note's image is a button so the enlargement is reachable by keyboard too.
+   `line-height: 0` and `width: fit-content` keep the hit box off the text
+   around it; the lift below is put on the picture rather than the button,
+   because a tall image is capped by its own max-height and stops short of the
+   button's edge. */
+.note-image-button {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  border: none;
+  background: none;
+  font: inherit;
+  line-height: 0;
+  padding: 0;
+  margin: 6px 0;
+  cursor: zoom-in;
+}
+
+.note-image-button .note-image {
+  margin: 0;
+  transition: transform 300ms var(--ease-out);
+}
+
+@media (hover: hover) {
+  .note-image-button:hover .note-image {
+    transform: scale(1.025);
+  }
+}
+
+/* Pressed in fast, released slowly — the picture gives a little before it
+   flies out. */
+.note-image-button:active .note-image {
+  transform: scale(0.98);
+  transition-duration: 120ms;
 }
 
 /* The tooltip is only 250px wide, so a full-size image would swamp it. */
@@ -1123,3 +1299,74 @@
     font-size: 16px;
   }
 }
+
+/* ── Enlarged image ────────────────────────────────────────────────────────
+   Clicking a note's image lifts it out of the log and onto a full-screen
+   veil. The travel is not laid out here — ImageViewer.tsx measures the
+   thumbnail and drives the three transforms below, one per nested box, each on
+   its own curve — but everything it needs is: the picture sizes itself against
+   the viewport, so nothing here depends on a parent whose width is in turn
+   waiting on the picture. */
+
+@keyframes veil-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes veil-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, #0c1210 92%, transparent);
+  cursor: zoom-out;
+  animation: veil-in 240ms var(--ease-fade) both;
+}
+
+/* Held as long as EXIT_MS in ImageViewer.tsx: this opacity is on the whole
+   subtree, so a shorter fade would blank the picture partway home. */
+.lightbox.is-closing {
+  animation: veil-out 280ms var(--ease-fade) both;
+}
+
+/* One box per axis: the sideways travel and the vertical travel run at
+   different rates, and a single transform could not hold two. */
+.lightbox-x,
+.lightbox-y {
+  display: block;
+  will-change: transform;
+}
+
+.lightbox {
+  /* Focused on open so Escape has a home; never in the tab order. */
+  outline: none;
+}
+
+.lightbox-image {
+  display: block;
+  max-width: calc(100vw - 32px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px));
+  max-height: calc(100dvh - 32px - var(--safe-top) - var(--safe-bottom));
+  width: auto;
+  height: auto;
+  border-radius: 8px;
+  will-change: transform;
+  /* ImageViewer.tsx turns this on the moment it has folded the picture back
+     down onto its thumbnail, which is the first state worth painting. */
+  opacity: 0;
+}
+

@@ -1,4 +1,5 @@
 import { Fragment, type ReactNode } from 'react'
+import { NoteImage } from './ImageViewer'
 
 // A deliberately small subset of Markdown: images — the reason this exists at
 // all, since pasting one writes `![](…)` into the note — plus links and inline
@@ -25,7 +26,7 @@ function safeUrl(url: string): string | null {
   }
 }
 
-function renderInline(text: string, lineKey: number): ReactNode[] {
+function renderInline(text: string, lineKey: number, zoomable: boolean): ReactNode[] {
   const nodes: ReactNode[] = []
   const pattern = inlinePattern()
   let last = 0
@@ -40,7 +41,7 @@ function renderInline(text: string, lineKey: number): ReactNode[] {
 
     if (imageUrl !== undefined) {
       const url = safeUrl(imageUrl)
-      nodes.push(url ? <img key={key} className="note-image" src={url} alt={imageAlt} loading="lazy" /> : raw)
+      nodes.push(url ? <NoteImage key={key} src={url} alt={imageAlt} zoomable={zoomable} /> : raw)
     } else if (linkUrl !== undefined) {
       const url = safeUrl(linkUrl)
       nodes.push(
@@ -69,14 +70,16 @@ function renderInline(text: string, lineKey: number): ReactNode[] {
   return nodes
 }
 
-export function Markdown({ text }: { text: string }) {
+/** `zoomable` opts the images in this note into the enlarging overlay — the
+ *  log passes it, the tooltip does not. */
+export function Markdown({ text, zoomable = false }: { text: string; zoomable?: boolean }) {
   const lines = text.split('\n')
   return (
     <>
       {lines.map((line, i) => (
         <Fragment key={i}>
           {i > 0 && '\n'}
-          {renderInline(line, i)}
+          {renderInline(line, i, zoomable)}
         </Fragment>
       ))}
     </>
