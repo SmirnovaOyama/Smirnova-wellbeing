@@ -455,8 +455,13 @@
   position: fixed;
   z-index: 20;
   transform: translateX(-50%);
-  min-width: 170px;
-  max-width: 250px;
+  /* Stated, not shrink-to-fit. A fixed box with `left` set and `right: auto`
+     sizes itself into the gap between `left` and the viewport's right edge —
+     so the bar hovered most, today's, at the far right of the row, squeezed
+     the box down to its old min-width and turned it into a tall thin ribbon.
+     The centring transform then moved it back over the bar, by which point the
+     damage to the line breaks was done. */
+  width: min(268px, calc(100vw - 2 * 8px));
   border-radius: 8px;
   border: 1px solid var(--border);
   background: var(--surface);
@@ -471,14 +476,16 @@
   transform-origin: var(--arrow-x, 50%) 0;
 }
 
-/* The scroll cap lives on the body, not the box: the arrow is drawn outside the
-   box's edge and any overflow other than `visible` would clip it away. */
+/* Capped on the body, not the box: the arrow is drawn outside the box's edge
+   and any overflow other than `visible` would clip it away. Nothing scrolls in
+   here — the box is `pointer-events: none`, so a scrollbar could never be
+   reached. What does not fit is cut by TOOLTIP_ENTRIES in App.tsx and left to
+   the log; this is only the backstop for a very short viewport. */
 .bar-tooltip-body {
-  padding: 10px 12px;
+  padding: 9px 11px;
   border-radius: inherit;
   max-height: calc(100dvh - 2px - 2 * 8px - var(--safe-top) - var(--safe-bottom));
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  overflow: hidden;
 }
 
 /* Clamped hard against a screen edge — the box no longer touches its bar, so a
@@ -509,10 +516,30 @@
   filter: drop-shadow(0 -1px 0 var(--border));
 }
 
+.bar-tooltip-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 7px;
+  padding-bottom: 7px;
+  border-bottom: 1px solid var(--border);
+}
+
+.bar-tooltip-metric {
+  min-width: 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .bar-tooltip-date {
   font-size: 0.75rem;
   color: var(--text-muted);
-  margin-bottom: 6px;
+  white-space: nowrap;
 }
 
 .bar-tooltip-muted {
@@ -523,7 +550,6 @@
 .tooltip-entries {
   display: flex;
   flex-direction: column;
-  gap: 8px;
   list-style: none;
   margin: 0;
   padding: 0;
@@ -533,24 +559,74 @@
   display: flex;
   flex-direction: column;
   gap: 3px;
+  padding: 6px 0;
+}
+
+/* A rule between check-ins. On a gap alone, a note that wrapped ran straight
+   into the next timestamp and a busy day read as one paragraph. */
+.tooltip-entry + .tooltip-entry {
+  border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+}
+
+.tooltip-entry:first-child {
+  padding-top: 0;
+}
+
+.tooltip-entry:last-child {
+  padding-bottom: 0;
 }
 
 .tooltip-entry-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
 }
 
-.tooltip-entry-note {
-  font-size: 0.8125rem;
-  color: var(--text);
-  white-space: pre-wrap;
+/* A picture is a fact about the check-in here rather than something to look
+   at: the box cannot be clicked into, and the log below renders it full size a
+   scroll away. */
+.tooltip-entry-image {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0 5px;
+  font-size: 0.6875rem;
+  line-height: 1.6;
+  color: var(--text-muted);
+  white-space: nowrap;
 }
 
-.bar-tooltip-metric {
+/* Two lines and no further. */
+.tooltip-entry-note {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--text);
+  /* `normal`, not `pre-wrap`: Markdown emits the note's own newlines as text,
+     and folding them into spaces is what keeps a two-paragraph note two lines
+     long instead of two lines per paragraph. */
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.tooltip-more {
+  margin-top: 7px;
+  padding-top: 7px;
+  border-top: 1px solid var(--border);
   font-size: 0.75rem;
   color: var(--text-muted);
-  margin-top: 8px;
+}
+
+/* A landscape phone has barely more height than the tooltip wants. */
+@media (max-height: 560px) {
+  .tooltip-entry-note {
+    -webkit-line-clamp: 1;
+    line-clamp: 1;
+  }
 }
 
 /* ── Logs ──────────────────────────────────────────────────────────────── */
@@ -1196,11 +1272,6 @@
 .note-image-button:active .note-image {
   transform: scale(0.98);
   transition-duration: 120ms;
-}
-
-/* The tooltip is only 250px wide, so a full-size image would swamp it. */
-.tooltip-entry-note .note-image {
-  max-height: 120px;
 }
 
 .note-link {

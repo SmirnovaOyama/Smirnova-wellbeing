@@ -30,6 +30,7 @@ import {
 import { ImageViewerProvider } from './ImageViewer'
 import { LoginScreen } from './LoginScreen'
 import { Markdown } from './Markdown'
+import { hasImage, stripImages } from './notes'
 import './App.css'
 
 // Stands in while GET /api/config is in flight, and if it ever fails. Kept in
@@ -205,6 +206,11 @@ function DiffBadge({ metric, from, to }: { metric: MetricConfig; from: Tier; to:
   )
 }
 
+// A hover box hanging off a 4px-wide bar is a preview, not a reader. The log
+// directly below already carries every note in full with its pictures, so past
+// this many check-ins the tooltip stops listing and points at it.
+const TOOLTIP_ENTRIES = 4
+
 const TOOLTIP_GAP = 10
 const VIEWPORT_MARGIN = 8
 
@@ -270,28 +276,50 @@ function BarTooltip({ tooltip }: { tooltip: TooltipState }) {
       role="tooltip"
     >
       <div className="bar-tooltip-body">
-        <div className="bar-tooltip-date">{formatDayLabel(tooltip.date)}</div>
+        {/* Which metric, then which day. Both charts are stacked and the bars
+            are the same shape in each, so the metric is the first thing this
+            has to answer — it used to sit at the very bottom, under the last
+            note, where it read as a caption. */}
+        <div className="bar-tooltip-head">
+          <span className="bar-tooltip-metric">{tooltip.metric.title}</span>
+          <span className="bar-tooltip-date">{formatDayLabel(tooltip.date)}</span>
+        </div>
         {tooltip.entries.length === 0 ? (
           <div className="bar-tooltip-muted">Nothing recorded</div>
         ) : (
-          <ul className="tooltip-entries">
-            {withPrevTier(tooltip.entries).map(({ entry, prevTier }) => (
-              <li className="tooltip-entry" key={entry.id}>
-                <span className="tooltip-entry-head">
-                  <span className="entry-time">{entry.time}</span>
-                  {entry.tier && <TierChip tier={entry.tier} />}
-                  {entry.tier && prevTier && <DiffBadge metric={tooltip.metric} from={prevTier} to={entry.tier} />}
-                </span>
-                {entry.note && (
-                  <span className="tooltip-entry-note">
-                    <Markdown text={entry.note} />
-                  </span>
-                )}
-              </li>
-            ))}
-          </ul>
+          <>
+            <ul className="tooltip-entries">
+              {/* Paired over the whole day before slicing, so the diffs on the
+                  entries that are shown still compare against the real
+                  previous check-in. */}
+              {withPrevTier(tooltip.entries)
+                .slice(0, TOOLTIP_ENTRIES)
+                .map(({ entry, prevTier }) => {
+                  const preview = entry.note ? stripImages(entry.note).trim() : ''
+                  return (
+                    <li className="tooltip-entry" key={entry.id}>
+                      <span className="tooltip-entry-head">
+                        <span className="entry-time">{entry.time}</span>
+                        {entry.tier && <TierChip tier={entry.tier} />}
+                        {entry.tier && prevTier && (
+                          <DiffBadge metric={tooltip.metric} from={prevTier} to={entry.tier} />
+                        )}
+                        {entry.note && hasImage(entry.note) && <span className="tooltip-entry-image">Image</span>}
+                      </span>
+                      {preview && (
+                        <span className="tooltip-entry-note">
+                          <Markdown text={preview} />
+                        </span>
+                      )}
+                    </li>
+                  )
+                })}
+            </ul>
+            {tooltip.entries.length > TOOLTIP_ENTRIES && (
+              <div className="tooltip-more">{tooltip.entries.length - TOOLTIP_ENTRIES} more in the log below</div>
+            )}
+          </>
         )}
-        <div className="bar-tooltip-metric">{tooltip.metric.title}</div>
       </div>
     </div>
   )
