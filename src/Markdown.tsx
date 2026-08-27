@@ -1,30 +1,13 @@
 import { Fragment, type ReactNode } from 'react'
 import { NoteImage } from './ImageViewer'
+import { inlinePattern, safeUrl } from './notes'
 
-// A deliberately small subset of Markdown: images — the reason this exists at
-// all, since pasting one writes `![](…)` into the note — plus links and inline
-// emphasis. Everything below builds React elements, never HTML, so there is no
-// innerHTML path that would need sanitising.
+// Everything below builds React elements, never HTML, so there is no innerHTML
+// path that would need sanitising. The grammar itself lives in notes.ts.
 //
-// Newlines are re-emitted as text and left to `white-space: pre-wrap` on the
-// container, so a note keeps the shape it was typed in.
-
-function inlinePattern(): RegExp {
-  // Fresh each call: a module-level /g regex carries lastIndex between calls.
-  return /!\[([^\]\n]*)\]\(([^)\s]+)\)|\[([^\]\n]+)\]\(([^)\s]+)\)|\*\*([^*\n]+)\*\*|\*([^*\n]+)\*|`([^`\n]+)`/g
-}
-
-/** Same-origin paths and http(s) only — this is what keeps `javascript:` and
- *  `data:` URLs from being reachable through a note. */
-function safeUrl(url: string): string | null {
-  if (url.startsWith('/')) return url
-  try {
-    const { protocol } = new URL(url)
-    return protocol === 'http:' || protocol === 'https:' ? url : null
-  } catch {
-    return null
-  }
-}
+// Newlines are re-emitted as text and left to the container's `white-space`,
+// so a note keeps the shape it was typed in — except in the bar tooltip, which
+// sets `normal` to fold a note down into a two-line preview.
 
 function renderInline(text: string, lineKey: number, zoomable: boolean): ReactNode[] {
   const nodes: ReactNode[] = []
