@@ -40,6 +40,14 @@
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
 
+  /* Motion. Neither curve overshoots — both control points stay inside
+     [0, 1], so nothing ever travels past where it is going and comes back.
+     They are still steep at one end and flat at the other, which is the whole
+     point: --ease-out leaves fast and spends most of its time arriving, and
+     --ease-fade eases in and out of a colour change. */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-fade: cubic-bezier(0.4, 0, 0.2, 1);
+
   --font:
     -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Helvetica Neue', 'Microsoft YaHei', 'SF Pro Text', system-ui,
     sans-serif;
@@ -77,6 +85,12 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   overscroll-behavior-y: none;
+
+  /* The enlarged-image overlay locks this box while it is open. Reserving the
+     gutter up front means taking the scrollbar away cannot shift the page
+     sideways underneath it; where scrollbars overlay the content there is
+     nothing to reserve and this does nothing. */
+  scrollbar-gutter: stable;
 }
 
 h1,

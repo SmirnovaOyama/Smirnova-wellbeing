@@ -27,6 +27,7 @@ import {
   ApiError,
   type ApiEntry,
 } from './api'
+import { ImageViewerProvider } from './ImageViewer'
 import { LoginScreen } from './LoginScreen'
 import { Markdown } from './Markdown'
 import './App.css'
@@ -813,7 +814,7 @@ function LogEntryRow({
 
       {!editing && entry.note && (
         <p className="log-entry-note">
-          <Markdown text={entry.note} />
+          <Markdown text={entry.note} zoomable />
         </p>
       )}
 
@@ -1018,136 +1019,144 @@ function Dashboard({
   }, [])
 
   return (
-    <div className="page" onClick={() => setTooltip(null)}>
-      <header className="topbar">
-        {renaming ? (
-          <BrandEditor
-            owner={owner}
-            onSave={async (next) => {
-              await onRenameOwner!(next)
-              setRenaming(false)
-            }}
-            onCancel={() => setRenaming(false)}
-          />
-        ) : (
-          <div className="brand">{title}</div>
-        )}
-        <div className="topbar-meta">
-          <span className="today-date">{todayLabel}</span>
-          {canManage && !renaming && (
-            <>
-              <span className="topbar-divider" aria-hidden="true">
-                ·
-              </span>
-              <button
-                type="button"
-                className="kicker-action"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setRenaming(true)
-                }}
-              >
-                Rename
-              </button>
-              <span className="topbar-divider" aria-hidden="true">
-                ·
-              </span>
-              <button
-                type="button"
-                className="kicker-action"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onLogout?.()
-                }}
-              >
-                Sign out
-              </button>
-            </>
-          )}
-        </div>
-      </header>
-
-      <main>
-        {entriesError && <p className="entries-error">{entriesError}</p>}
-
-        <section className="metric-list">
-          {metrics.map((metric) => (
-            <MetricRow
-              key={metric.id}
-              metric={metric}
-              visibleDays={visibleDays}
-              entriesByDay={entriesByDay}
-              canManage={canManage}
-              onShowTooltip={setTooltip}
-              onHideTooltip={() => setTooltip(null)}
-              onCreateEntry={async (tier, time, note) => {
-                await onCreateEntry!(metric.id, tier, time, note)
-                // Today is always the first group, so jump back rather than
-                // filing the check-in onto a page the user is not looking at.
-                setLogPage(0)
+    <ImageViewerProvider>
+      <div className="page" onClick={() => setTooltip(null)}>
+        <header className="topbar">
+          {renaming ? (
+            <BrandEditor
+              owner={owner}
+              onSave={async (next) => {
+                await onRenameOwner!(next)
+                setRenaming(false)
               }}
+              onCancel={() => setRenaming(false)}
             />
-          ))}
-        </section>
-
-        <section className="logs" ref={logsRef}>
-          <div className="logs-head">
-            <h2 className="logs-title">Log</h2>
-            {pageRange && <span className="logs-range">{pageRange}</span>}
-          </div>
-          {logGroups.length === 0 ? (
-            <p className="logs-empty">Nothing recorded yet.</p>
           ) : (
-            <div className="log-vine">
-              {pageGroups.map((group) => (
-                <div className="log-group" key={group.date}>
-                  <h3 className="log-date">{group.label}</h3>
-                  <div className="log-entries">
-                    {group.rows.map(({ entry, prevTier }) => (
-                      <LogEntryRow
-                        key={entry.id}
-                        entry={entry}
-                        metric={metricFor(entry.metric_id)}
-                        prevTier={prevTier}
-                        canManage={canManage}
-                        onSave={onSaveEntry}
-                        onDelete={onDeleteEntry}
-                      />
-                    ))}
-                  </div>
-                </div>
-              ))}
+            <div className="brand">{title}</div>
+          )}
+          <div className="topbar-meta">
+            <span className="today-date">{todayLabel}</span>
+            {canManage && !renaming && (
+              <>
+                <span className="topbar-divider" aria-hidden="true">
+                  ·
+                </span>
+                <button
+                  type="button"
+                  className="kicker-action"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setRenaming(true)
+                  }}
+                >
+                  Rename
+                </button>
+                <span className="topbar-divider" aria-hidden="true">
+                  ·
+                </span>
+                <button
+                  type="button"
+                  className="kicker-action"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onLogout?.()
+                  }}
+                >
+                  Sign out
+                </button>
+              </>
+            )}
+          </div>
+        </header>
+
+        <main>
+          {entriesError && <p className="entries-error">{entriesError}</p>}
+
+          <section className="metric-list">
+            {metrics.map((metric) => (
+              <MetricRow
+                key={metric.id}
+                metric={metric}
+                visibleDays={visibleDays}
+                entriesByDay={entriesByDay}
+                canManage={canManage}
+                onShowTooltip={setTooltip}
+                onHideTooltip={() => setTooltip(null)}
+                onCreateEntry={async (tier, time, note) => {
+                  await onCreateEntry!(metric.id, tier, time, note)
+                  // Today is always the first group, so jump back rather than
+                  // filing the check-in onto a page the user is not looking at.
+                  setLogPage(0)
+                }}
+              />
+            ))}
+          </section>
+
+          <section className="logs" ref={logsRef}>
+            <div className="logs-head">
+              <h2 className="logs-title">Log</h2>
+              {pageRange && <span className="logs-range">{pageRange}</span>}
             </div>
-          )}
+            {logGroups.length === 0 ? (
+              <p className="logs-empty">Nothing recorded yet.</p>
+            ) : (
+              <div className="log-vine">
+                {pageGroups.map((group) => (
+                  <div className="log-group" key={group.date}>
+                    <h3 className="log-date">{group.label}</h3>
+                    <div className="log-entries">
+                      {group.rows.map(({ entry, prevTier }) => (
+                        <LogEntryRow
+                          key={entry.id}
+                          entry={entry}
+                          metric={metricFor(entry.metric_id)}
+                          prevTier={prevTier}
+                          canManage={canManage}
+                          onSave={onSaveEntry}
+                          onDelete={onDeleteEntry}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
 
-          {pageCount > 1 && (
-            <nav className="log-pager" aria-label="Log pages">
-              <button
-                type="button"
-                className="log-pager-step"
-                onClick={() => goToLogPage(logPageIndex - 1)}
-                disabled={logPageIndex === 0}
-              >
-                ← Newer
-              </button>
-              <span className="log-pager-count" aria-live="polite">
-                Page {logPageIndex + 1} of {pageCount}
-              </span>
-              <button
-                type="button"
-                className="log-pager-step"
-                onClick={() => goToLogPage(logPageIndex + 1)}
-                disabled={logPageIndex === pageCount - 1}
-              >
-                Older →
-              </button>
-            </nav>
-          )}
-        </section>
-      </main>
+            {pageCount > 1 && (
+              <nav className="log-pager" aria-label="Log pages">
+                <button
+                  type="button"
+                  className="log-pager-step"
+                  onClick={() => goToLogPage(logPageIndex - 1)}
+                  disabled={logPageIndex === 0}
+                >
+                  <span className="log-pager-arrow log-pager-arrow--prev" aria-hidden="true">
+                    ←
+                  </span>{' '}
+                  Newer
+                </button>
+                <span className="log-pager-count" aria-live="polite">
+                  Page {logPageIndex + 1} of {pageCount}
+                </span>
+                <button
+                  type="button"
+                  className="log-pager-step"
+                  onClick={() => goToLogPage(logPageIndex + 1)}
+                  disabled={logPageIndex === pageCount - 1}
+                >
+                  Older{' '}
+                  <span className="log-pager-arrow log-pager-arrow--next" aria-hidden="true">
+                    →
+                  </span>
+                </button>
+              </nav>
+            )}
+          </section>
+        </main>
 
-      {tooltip && <BarTooltip tooltip={tooltip} />}
-    </div>
+        {tooltip && <BarTooltip tooltip={tooltip} />}
+      </div>
+    </ImageViewerProvider>
   )
 }
 
