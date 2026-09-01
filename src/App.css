@@ -1155,6 +1155,13 @@
     box-shadow 150ms ease;
 }
 
+.checkin-date-time {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+}
+
 .checkin-note {
   width: 100%;
   border: 1px solid var(--border);
@@ -1440,4 +1447,3 @@
      down onto its thumbnail, which is the first state worth painting. */
   opacity: 0;
 }
-
