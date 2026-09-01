@@ -437,6 +437,32 @@ function TimeField({ value, onChange }: { value: string; onChange: (time: string
   )
 }
 
+function DateField({ value, onChange }: { value: string; onChange: (date: string) => void }) {
+  return (
+    <label className="time-field">
+      <span className="time-field-label">Date</span>
+      <input
+        type="date"
+        value={value}
+        max={todayKey()}
+        required
+        onChange={(e) => {
+          const next = e.target.value
+          if (!next) {
+            // Clearing a controlled field whose state already holds today's
+            // date can be skipped by React as a same-value update, leaving the
+            // browser's empty native control on screen. Restore its DOM value
+            // directly in that case.
+            e.currentTarget.value = value
+            return
+          }
+          onChange(next)
+        }}
+      />
+    </label>
+  )
+}
+
 /** Pulls an image out of a paste or a drop. Chrome exposes it through `items`,
  *  iOS Safari through `files` — checking both is what makes pasting from a
  *  phone work as well as ⌘V on a desktop. */
@@ -577,11 +603,13 @@ function CheckInForm({
 }: {
   metric: MetricConfig
   todayCount: number
-  onSave: (tier: Tier | null, time: string, note: string) => Promise<void>
+  onSave: (tier: Tier | null, date: string, time: string, note: string) => Promise<void>
 }) {
   const [editing, setEditing] = useState(false)
   const [mode, setMode] = useState<EntryMode>('tier')
   const [tier, setTier] = useState<Tier>(metric.tiers[0])
+  const [date, setDate] = useState(todayKey)
+  const [showDate, setShowDate] = useState(false)
   const [time, setTime] = useState(nowTimeKey)
   const [note, setNote] = useState('')
   const [saving, setSaving] = useState(false)
@@ -591,6 +619,8 @@ function CheckInForm({
   function open() {
     setMode('tier')
     setTier(metric.tiers[0])
+    setDate(todayKey())
+    setShowDate(false)
     setTime(nowTimeKey())
     setNote('')
     setError(null)
@@ -618,7 +648,7 @@ function CheckInForm({
     setSaving(true)
     setError(null)
     try {
-      await onSave(mode === 'tier' ? tier : null, time, note)
+      await onSave(mode === 'tier' ? tier : null, date, time, note)
       setEditing(false)
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not save. Please try again.')
@@ -636,7 +666,20 @@ function CheckInForm({
           <TierPicker metric={metric} value={tier} onChange={setTier} />
         </>
       )}
-      <TimeField value={time} onChange={setTime} />
+      <div className="checkin-date-time">
+        <TimeField value={time} onChange={setTime} />
+        {!showDate && (
+          <button
+            type="button"
+            className="checkin-toggle"
+            aria-expanded={showDate}
+            onClick={() => setShowDate(true)}
+          >
+            Forgot to log this earlier?
+          </button>
+        )}
+        {showDate && <DateField value={date} onChange={setDate} />}
+      </div>
       <NoteField
         value={note}
         onChange={setNote}
@@ -677,7 +720,7 @@ function MetricRow({
   canManage: boolean
   onShowTooltip: (tooltip: TooltipState) => void
   onHideTooltip: () => void
-  onCreateEntry: (tier: Tier | null, time: string, note: string) => Promise<void>
+  onCreateEntry: (tier: Tier | null, date: string, time: string, note: string) => Promise<void>
 }) {
   const days = useMemo(() => {
     const list: { date: Date; entries: ApiEntry[] }[] = []
@@ -973,7 +1016,7 @@ function Dashboard({
   canManage: boolean
   onLogout?: () => void
   onRenameOwner?: (owner: string) => Promise<void>
-  onCreateEntry?: (metricId: string, tier: Tier | null, time: string, note: string) => Promise<void>
+  onCreateEntry?: (metricId: string, tier: Tier | null, date: string, time: string, note: string) => Promise<void>
   onSaveEntry?: (id: number, patch: { tier: Tier | null; time: string; note: string | null }) => Promise<void>
   onDeleteEntry?: (id: number) => Promise<void>
 }) {
@@ -1110,8 +1153,8 @@ function Dashboard({
                 canManage={canManage}
                 onShowTooltip={setTooltip}
                 onHideTooltip={() => setTooltip(null)}
-                onCreateEntry={async (tier, time, note) => {
-                  await onCreateEntry!(metric.id, tier, time, note)
+                onCreateEntry={async (tier, date, time, note) => {
+                  await onCreateEntry!(metric.id, tier, date, time, note)
                   // Today is always the first group, so jump back rather than
                   // filing the check-in onto a page the user is not looking at.
                   setLogPage(0)
@@ -1247,8 +1290,8 @@ export function AdminApp() {
 
   useRefreshOnReturn(authState === 'signed-in', refreshSession)
 
-  async function handleCreateEntry(metricId: string, tier: Tier | null, time: string, note: string) {
-    const { entry } = await createEntry({ metricId, date: todayKey(), time, tier, note: note.trim() || null })
+  async function handleCreateEntry(metricId: string, tier: Tier | null, date: string, time: string, note: string) {
+    const { entry } = await createEntry({ metricId, date, time, tier, note: note.trim() || null })
     setEntries((prev) => [...prev, entry])
   }
 
